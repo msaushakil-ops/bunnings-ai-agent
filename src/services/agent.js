@@ -575,7 +575,22 @@ async function resolveOrders(
  * ------------------------------------------------------------
  */
 
-async function resolvePolicies(userQuery) {
+async function resolvePolicies(userQuery, codes = { policyCodes: [] }) {
+
+    // Fast path: exact policy_code match
+    if (codes.policyCodes?.length) {
+        const exact = await query(
+            `
+            SELECT policy_code, title, content, category
+            FROM policies
+            WHERE policy_code = ANY($1::varchar[])
+            `,
+            [codes.policyCodes]
+        );
+        if (exact.rows.length > 0) {
+            return exact.rows.map(r => ({ ...r, retrieval_score: 1000 }));
+        }
+    }
 
     const result = await query(
         `
@@ -674,8 +689,24 @@ async function resolvePolicies(userQuery) {
 
 async function resolveManuals(
     userQuery,
-    products
+    products,
+    codes = { manualCodes: [] }
 ) {
+
+    // Fast path: exact manual_code match
+    if (codes.manualCodes?.length) {
+        const exact = await query(
+            `
+            SELECT manual_code, product_code, title, content, category
+            FROM manuals
+            WHERE manual_code = ANY($1::varchar[])
+            `,
+            [codes.manualCodes]
+        );
+        if (exact.rows.length > 0) {
+            return exact.rows.map(r => ({ ...r, retrieval_score: 1000 }));
+        }
+    }
 
     const result = await query(
         `
@@ -765,8 +796,32 @@ async function resolveManuals(
 
 async function resolveTickets(
     customers,
-    products
+    products,
+    codes = { ticketCodes: [] }
 ) {
+
+    // Fast path: exact ticket_code match (works with no customer resolved)
+    if (codes.ticketCodes?.length) {
+        const exact = await query(
+            `
+            SELECT
+                t.ticket_code,
+                c.customer_code,
+                c.full_name,
+                t.subject,
+                t.description,
+                t.status,
+                t.created_at
+            FROM tickets t
+            LEFT JOIN customers c ON c.id = t.customer_id
+            WHERE t.ticket_code = ANY($1::varchar[])
+            `,
+            [codes.ticketCodes]
+        );
+        if (exact.rows.length > 0) {
+            return exact.rows.map(r => ({ ...r, retrieval_score: 1000 }));
+        }
+    }
 
     if (customers.length === 0) {
         return [];
@@ -964,19 +1019,22 @@ export async function gatherSources(userQuery) {
 
     const policies =
         await resolvePolicies(
-            userQuery
+            userQuery,
+            codes
         );
 
     const manuals =
         await resolveManuals(
             userQuery,
-            products
+            products,
+            codes
         );
 
     const tickets =
         await resolveTickets(
             customers,
-            products
+            products,
+            codes
         );
 
     const staticKB =
