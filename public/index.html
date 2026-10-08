@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enterprise AI Specialist - Hybrid RAG</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --panel: #111827;
+      --accent: #059669;
+      --accent-hover: #047857;
+      --border: #1f2937;
+      --text-main: #f9fafb;
+      --text-sub: #9ca3af;
+      --user-msg: #1e3a8a;
+      --reasoning-bg: #061524;
+      --reasoning-border: #10b981;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Background is now rendered by the real NEAT WebGL canvas (see
+       #neat-gradient below and the module script at the bottom of the
+       page) rather than a CSS approximation. */
+    .bg-fallback {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background: var(--bg);
+    }
+
+    .app-container {
+      width: 100%;
+      max-width: 1600px;
+      height: 92vh;
+      background: rgba(17, 24, 39, 0.72);
+      backdrop-filter: blur(28px) saturate(140%);
+      -webkit-backdrop-filter: blur(28px) saturate(140%);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75);
+      overflow: hidden;
+      position: relative;
+      z-index: 1;
+    }
+
+    .header {
+      padding: 20px 28px;
+      background: rgba(4, 47, 46, 0.85);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      flex-shrink: 0;
+    }
+
+    .header-title { display: flex; align-items: center; gap: 12px; }
+    .header h1 { font-size: 1.35rem; font-weight: 700; color: #fff; }
+    .header p { font-size: 0.85rem; color: #6ee7b7; margin-top: 2px; }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .live-clock {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #d1fae5;
+      background: rgba(6, 78, 59, 0.5);
+      border: 1px solid #059669;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.02em;
+    }
+
+    .status-badge {
+      font-size: 0.8rem;
+      background: #064e3b;
+      color: #34d399;
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid #059669;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background-color: #34d399;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #34d399;
+    }
+
+    .chat-box {
+      flex: 1;
+      padding: 28px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .chat-box::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      background: linear-gradient(120deg, rgba(5,150,105,0.10), rgba(8,145,178,0.10), rgba(124,58,237,0.10), rgba(5,150,105,0.10));
+      background-size: 300% 300%;
+      animation: chatBoxHue 18s ease infinite;
+      pointer-events: none;
+    }
+
+    @keyframes chatBoxHue {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    .message {
+      max-width: 88%;
+      padding: 16px 20px;
+      border-radius: 12px;
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      background: var(--user-msg);
+      color: #fff;
+      border-bottom-right-radius: 2px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .message.agent {
+      align-self: flex-start;
+      background: #1f2937;
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 2px;
+      width: 100%;
+    }
+
+    .action-pill {
+      display: inline-block;
+      background: #064e3b;
+      color: #34d399;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      border: 1px solid #059669;
+      letter-spacing: 0.05em;
+    }
+
+    .reasoning-box {
+      margin-top: 8px;
+      margin-bottom: 14px;
+      padding: 14px 18px;
+      background: var(--reasoning-bg);
+      border-left: 4px solid var(--reasoning-border);
+      border-radius: 8px;
+      font-size: 0.9rem;
+      color: #cbd5e1;
+      line-height: 1.6;
+    }
+
+    .reasoning-header {
+      font-weight: 700;
+      color: #34d399;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      font-size: 0.78rem;
+      letter-spacing: 0.06em;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .next-steps-box {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid #1f2937;
+    }
+
+    .next-steps-title {
+      color: #6ee7b7;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+    }
+
+    .next-steps-list {
+      margin-top: 6px;
+      padding-left: 18px;
+      color: #d1d5db;
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    .sources-tag {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px dashed #374151;
+      font-size: 0.8rem;
+      color: var(--text-sub);
+    }
+
+    .input-bar {
+      padding: 20px 28px;
+      background: #0b0f19;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 14px;
+    }
+
+    input {
+      flex: 1;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      color: #fff;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus { border-color: var(--accent); }
+    input:disabled { opacity: 0.6; }
+
+    button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 0 28px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button:hover { background: var(--accent-hover); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+<!-- ✏️ EDIT THIS: point src to your downloaded NEAT mp4 (relative or absolute path).
+     Place the file next to this html, e.g. /assets/neat-background.mp4 -->
+<div
+  class="bg-fallback"
+  style="
+    position:fixed;
+    inset:0;
+    z-index:0;
+    background:#090d16;
+  "
+></div>
+
+<!-- NEAT requires a small attribution credit unless you purchase a license
+     key from firecms.co to remove it. Keeping this per their license terms
+     since the gradient design still originates from NEAT's export. -->
+<a href="https://neat.firecms.co" target="_blank" rel="noopener"
+   style="position:fixed; bottom:8px; right:12px; z-index:1; font-size:0.7rem; color:#6b7280; text-decoration:none; opacity:0.6;">
+  Gradient by NEAT
+</a>
+
+<div class="app-container">
+  <div class="header">
+    <div class="header-title">
+      <div>
+        <h1>Bunnings AI Systems Specialist</h1>
+        <p>Enterprise Hybrid RAG | Zero-Hallucination Reasoning Engine</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="live-clock" id="liveClock">--:-- --</div>
+      <div class="status-badge" id="systemStatus">
+                <span class="pulse-dot"></span> Checking AI System...
+        </div>
+    </div>
+  </div>
+
+  <div class="chat-box" id="chatBox">
+    <div class="message agent">
+      Hello! Ask me complex questions regarding store return policies, timber ratings (H2/H3/H4), tool warranties, or product application limits.
+    </div>
+  </div>
+
+  <div class="input-bar">
+    <input type="text" id="userInput" placeholder="Ask a question..." onkeydown="if(event.key==='Enter') sendQuery()">
+    <button id="sendBtn" onclick="sendQuery()">Send Query</button>
+  </div>
+</div>
+
+<script>
+  // =========================================================================
+  // ✏️ EDIT THIS LINE: Paste your active Ngrok URL from Colab here
+  // =========================================================================
+  const API_BASE_URL = "http://localhost:3000";
+  // =========================================================================
+
+  // Live clock, updates every second, hr:min AM/PM format (e.g. "3:45 PM")
+  function updateClock() {
+    const el = document.getElementById("liveClock");
+    if (!el) return;
+    const now = new Date();
+    let hours = now.getHours();
+    const minutes = now.getMinutes().toString().padStart(2, "0");
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12;
+    hours = hours === 0 ? 12 : hours;
+    el.textContent = `${hours}:${minutes} ${ampm}`;
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  // Escape untrusted text before injecting into innerHTML, to prevent
+  // both the user's own input and any model output from being able to
+  // inject markup/scripts into the page.
+  function escapeHTML(str) {
+    if (str === null || str === undefined) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // Helper for fast, smooth typewriter animation. Builds the full escaped
+  // string in a text node style but reveals it character by character.
+  function animateText(element, text, speed = 8) {
+    return new Promise((resolve) => {
+      let i = 0;
+      element.textContent = "";
+      const chatBox = document.getElementById("chatBox");
+      const timer = setInterval(() => {
+        if (i < text.length) {
+          element.textContent += text.charAt(i);
+          i++;
+          chatBox.scrollTop = chatBox.scrollHeight;
+        } else {
+          clearInterval(timer);
+          resolve();
+        }
+      }, speed);
+    });
+  }
+
+
+
+async function sendQuery() {
+    const inputEl = document.getElementById("userInput");
+    const sendBtn = document.getElementById("sendBtn");
+    const chatBox = document.getElementById("chatBox");
+
+    const query = inputEl.value.trim();
+
+    if (!query) return;
+
+    // -------------------------------------------------------------------------
+    // USER MESSAGE
+    // -------------------------------------------------------------------------
+
+    chatBox.innerHTML += `
+        <div class="message user">
+            ${escapeHTML(query)}
+        </div>
+    `;
+
+    inputEl.value = "";
+    inputEl.disabled = true;
+    sendBtn.disabled = true;
+
+    chatBox.scrollTop =
+        chatBox.scrollHeight;
+
+    // -------------------------------------------------------------------------
+    // LOADING MESSAGE
+    // -------------------------------------------------------------------------
+
+    const loadingId =
+        "load-" + Date.now();
+
+    chatBox.innerHTML += `
+        <div
+            class="message agent"
+            id="${loadingId}"
+        >
+            <div
+                style="
+                    display:flex;
+                    align-items:center;
+                    gap:8px;
+                    color:#34d399;
+                    font-weight:600;
+                    font-size:.9rem;
+                "
+            >
+                ⚡
+                <span id="status-text-${loadingId}">
+                    Connecting to AI orchestration layer...
+                </span>
+            </div>
+        </div>
+    `;
+
+    chatBox.scrollTop =
+        chatBox.scrollHeight;
+
+    const statusEl =
+        document.getElementById(
+            `status-text-${loadingId}`
+        );
+
+    const statusSteps = [
+        "Checking healthy AI worker pool...",
+        "Gathering PostgreSQL and knowledge evidence...",
+        "Selecting available Gemini backend...",
+        "Running hybrid retrieval and reasoning...",
+        "Validating structured response..."
+    ];
+
+    let stepIdx = 0;
+
+    const statusInterval =
+        setInterval(() => {
+
+            if (
+                statusEl &&
+                stepIdx < statusSteps.length
+            ) {
+                statusEl.textContent =
+                    statusSteps[stepIdx++];
+
+                chatBox.scrollTop =
+                    chatBox.scrollHeight;
+            }
+
+        }, 800);
+
+    try {
+
+        // ---------------------------------------------------------------------
+        // NODE.JS REQUEST
+        // ---------------------------------------------------------------------
+
+        const response =
+            await fetch(
+                `${API_BASE_URL}/api/chat`,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        Query: query
+                    })
+                }
+            );
+
+        clearInterval(statusInterval);
+
+        // ---------------------------------------------------------------------
+        // SAFE JSON PARSING
+        // ---------------------------------------------------------------------
+
+        let resData = null;
+
+        try {
+
+            resData =
+                await response.json();
+
+        } catch (jsonError) {
+
+            throw new Error(
+                `Node returned HTTP ${response.status} with invalid JSON.`
+            );
+        }
+
+        const loadingEl =
+            document.getElementById(
+                loadingId
+            );
+
+        if (!loadingEl) {
+            return;
+        }
+
+        // ---------------------------------------------------------------------
+        // IMPORTANT:
+        // Node uses success:true at the ROOT.
+        // ---------------------------------------------------------------------
+
+        if (
+            response.ok &&
+            resData.success === true
+        ) {
+
+            // -----------------------------------------------------------------
+            // NODE RESPONSE STRUCTURE
+            //
+            // resData
+            //   └── rag
+            //        └── data
+            //             ├── query
+            //             ├── contexts_used
+            //             └── response
+            // -----------------------------------------------------------------
+
+            const activeBackend =
+                resData.ai_backend?.id ||
+                resData.rag?.backend_id ||
+                "UNKNOWN";
+
+            const backendName =
+                resData.ai_backend?.name ||
+                "AI Backend";
+
+            const sourceSummary =
+                resData.source_summary ||
+                {};
+
+            const ragEnvelope =
+                resData.rag ||
+                {};
+
+            const ragData =
+                ragEnvelope.data ||
+                {};
+
+            // -----------------------------------------------------------------
+            // PARSE STRUCTURED GEMINI RESPONSE
+            // -----------------------------------------------------------------
+
+            let parsedResponse;
+
+            try {
+
+                if (
+                    typeof ragData.response ===
+                    "string"
+                ) {
+
+                    parsedResponse =
+                        JSON.parse(
+                            ragData.response
+                        );
+
+                } else if (
+                    ragData.response &&
+                    typeof ragData.response ===
+                    "object"
+                ) {
+
+                    parsedResponse =
+                        ragData.response;
+
+                } else {
+
+                    parsedResponse = {
+                        action_status:
+                            "ASSISTANCE REQUIRED",
+
+                        final_answer:
+                            "No structured answer was returned by the AI worker.",
+
+                        reasoning_steps: [],
+
+                        customer_next_steps: []
+                    };
+                }
+
+            } catch (parseError) {
+
+                parsedResponse = {
+
+                    action_status:
+                        "ASSISTANCE REQUIRED",
+
+                    final_answer:
+                        String(
+                            ragData.response ||
+                            "The AI worker returned an unstructured response."
+                        ),
+
+                    reasoning_steps: [],
+
+                    customer_next_steps: []
+                };
+            }
+
+            // -----------------------------------------------------------------
+            // NORMALIZE RESPONSE
+            // -----------------------------------------------------------------
+
+            const actionStatus =
+                parsedResponse.action_status ||
+                "POLICY DIRECTIVE";
+
+            const answerText =
+                parsedResponse.final_answer ||
+                "No response generated.";
+
+            const reasoningSteps =
+                Array.isArray(
+                    parsedResponse.reasoning_steps
+                )
+                    ? parsedResponse.reasoning_steps
+                    : [];
+
+            const nextSteps =
+                Array.isArray(
+                    parsedResponse.customer_next_steps
+                )
+                    ? parsedResponse.customer_next_steps
+                    : [];
+
+            const docsUsed =
+                Array.isArray(
+                    ragData.contexts_used
+                ) &&
+                ragData.contexts_used.length > 0
+
+                    ? ragData.contexts_used
+                        .map(escapeHTML)
+                        .join(", ")
+
+                    : "None";
+
+            // -----------------------------------------------------------------
+            // REASONING HTML
+            // -----------------------------------------------------------------
+
+            const reasoningHTML =
+                reasoningSteps.length > 0
+
+                    ? reasoningSteps
+                        .map(
+                            step =>
+                                `• ${escapeHTML(step)}`
+                        )
+                        .join("<br>")
+
+                    : "No additional reasoning provided.";
+
+            // -----------------------------------------------------------------
+            // NEXT STEPS
+            // -----------------------------------------------------------------
+
+            let nextStepsHTML = "";
+
+            if (nextSteps.length > 0) {
+
+                nextStepsHTML = `
+                    <div class="next-steps-box">
+
+                        <strong class="next-steps-title">
+                            Recommended Next Steps:
+                        </strong>
+
+                        <ul class="next-steps-list">
+
+                            ${nextSteps
+                                .map(
+                                    step =>
+                                        `<li>${escapeHTML(step)}</li>`
+                                )
+                                .join("")}
+
+                        </ul>
+
+                    </div>
+                `;
+            }
+
+            // -----------------------------------------------------------------
+            // SOURCE SUMMARY
+            // -----------------------------------------------------------------
+
+            const sourceSummaryHTML = `
+                <div style="
+                    margin-top:10px;
+                    color:#9ca3af;
+                    font-size:.78rem;
+                    line-height:1.5;
+                ">
+
+                    <b>Evidence sources:</b>
+
+                    Static KB:
+                    ${Number(
+                        sourceSummary.static_kb || 0
+                    )}
+
+                    &nbsp;|&nbsp;
+
+                    Customers:
+                    ${Number(
+                        sourceSummary.postgres_customers || 0
+                    )}
+
+                    &nbsp;|&nbsp;
+
+                    Products:
+                    ${Number(
+                        sourceSummary.postgres_products || 0
+                    )}
+
+                    &nbsp;|&nbsp;
+
+                    Orders:
+                    ${Number(
+                        sourceSummary.postgres_orders || 0
+                    )}
+
+                    &nbsp;|&nbsp;
+
+                    Policies:
+                    ${Number(
+                        sourceSummary.postgres_policies || 0
+                    )}
+
+                    &nbsp;|&nbsp;
+
+                    Manuals:
+                    ${Number(
+                        sourceSummary.postgres_manuals || 0
+                    )}
+
+                    &nbsp;|&nbsp;
+
+                    Tickets:
+                    ${Number(
+                        sourceSummary.postgres_tickets || 0
+                    )}
+
+                </div>
+            `;
+
+            // -----------------------------------------------------------------
+            // FINAL RESPONSE UI
+            // -----------------------------------------------------------------
+
+            loadingEl.innerHTML = `
+
+                <div class="action-pill">
+                    ${escapeHTML(actionStatus)}
+                </div>
+
+                <div class="reasoning-box">
+
+                    <div class="reasoning-header">
+                        🧠 System Verification Logic
+                    </div>
+
+                    <div>
+                        ${reasoningHTML}
+                    </div>
+
+                </div>
+
+                <div
+                    id="answer-content-${loadingId}"
+                    style="
+                        font-size:1rem;
+                        line-height:1.6;
+                        color:#f9fafb;
+                    "
+                ></div>
+
+                ${nextStepsHTML}
+
+                <div class="sources-tag">
+
+                    <b>AI Backend:</b>
+                    ${escapeHTML(activeBackend)}
+
+                    <br>
+
+                    <b>Worker:</b>
+                    ${escapeHTML(backendName)}
+
+                    <br>
+
+                    <b>Verified KB / Record IDs:</b>
+                    ${docsUsed}
+
+                    ${sourceSummaryHTML}
+
+                </div>
+            `;
+
+            // -----------------------------------------------------------------
+            // TYPEWRITER
+            // -----------------------------------------------------------------
+
+            const answerEl =
+                document.getElementById(
+                    `answer-content-${loadingId}`
+                );
+
+            await animateText(
+                answerEl,
+                answerText,
+                8
+            );
+
+        } else {
+
+            // -----------------------------------------------------------------
+            // SERVER ERROR
+            // -----------------------------------------------------------------
+
+            const errMsg =
+                resData?.error ||
+                resData?.detail ||
+                `HTTP ${response.status}`;
+
+            loadingEl.innerHTML = `
+                <div
+                    style="
+                        color:#ef4444;
+                        font-weight:600;
+                    "
+                >
+                    ⚠️ Server Error:
+                    ${escapeHTML(errMsg)}
+                </div>
+            `;
+        }
+
+    } catch (err) {
+
+        clearInterval(statusInterval);
+
+        console.error(
+            "AI UI request error:",
+            err
+        );
+
+        const loadingEl =
+            document.getElementById(
+                loadingId
+            );
+
+        if (loadingEl) {
+
+            loadingEl.innerHTML = `
+                <div
+                    style="
+                        color:#ef4444;
+                        font-weight:600;
+                    "
+                >
+                    ⚠️ Connection Error:
+                    Unable to reach the local AI gateway.
+                    Ensure Node.js is running on
+                    http://localhost:3000.
+                    <div
+                        style="
+                            margin-top:6px;
+                            color:#9ca3af;
+                            font-size:.8rem;
+                            font-weight:400;
+                        "
+                    >
+                        ${escapeHTML(err.message)}
+                    </div>
+                </div>
+            `;
+        }
+
+    } finally {
+
+        inputEl.disabled = false;
+        sendBtn.disabled = false;
+
+        inputEl.focus();
+
+        chatBox.scrollTop =
+            chatBox.scrollHeight;
+    }
+}
+
+
+
+
+
+  // If the video path hasn't been set yet, or fails to load (wrong path,
+  // file missing, browser blocks autoplay, etc.), fall back to the flat
+  // --bg color instead of showing a broken video icon.
+  const bgVideo = document.getElementById("bg-video");
+  if (bgVideo) {
+    bgVideo.addEventListener("error", () => {
+      bgVideo.style.display = "none";
+      document.body.style.backgroundColor = "var(--bg)";
+    });
+  }
+</script>
+
+</body>
+</html>
