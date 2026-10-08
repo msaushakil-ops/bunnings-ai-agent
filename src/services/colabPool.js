@@ -6,6 +6,11 @@ dotenv.config();
 const HEALTH_TIMEOUT = Number(process.env.COLAB_HEALTH_TIMEOUT_MS || 10000);
 const CHAT_TIMEOUT   = Number(process.env.COLAB_CHAT_TIMEOUT_MS   || 120000);
 
+// How many consecutive /chat failures before we consider a backend down.
+// 1 = too aggressive (a single Gemini quota blip kills the agent for 5 min)
+// 3 = tolerant enough for transient errors, still trips on real outages.
+const FAILURE_THRESHOLD = 3;
+
 const backendDefinitions = [
   {
     id: "COLAB",
@@ -41,7 +46,8 @@ export async function heartbeatBackend(backend) {
       timeout: HEALTH_TIMEOUT,
       validateStatus: () => true,
       headers: {
-        "ngrok-skip-browser-warning": "69420"
+        "ngrok-skip-browser-warning": "69420",
+        "Accept": "application/json"
       }
     });
 
@@ -49,7 +55,9 @@ export async function heartbeatBackend(backend) {
                     response.status < 300 &&
                     response.data?.status === "healthy";
 
-
+    // Backwards compatible: v2.7 does not send ready_for_chat.
+    // Missing field is treated as "ready if healthy".
+    // Explicit false means not ready.
     const ready = healthy && response.data?.ready_for_chat !== false;
 
     backend.healthy = healthy;
@@ -105,7 +113,16 @@ export function selectBackend(excludedIds = new Set()) {
 }
 
 /**
- * CRITICAL: now accepts an object { query, evidence }
+ * Calls the RAG backend. Accepts { query, evidence }.
+ *
+ * Resilience policy:
+ *  - A single /chat failure does NOT take the backend offline.
+ *    Transient errors (Gemini quota blips, ngrok resets, brief 5xx)
+ *    are common and should not disable the agent for the full
+ *    heartbeat cycle.
+ *  - Only after FAILURE_THRESHOLD consecutive failures do we mark
+ *    the backend unhealthy; the next heartbeat or the next
+ *    successful /chat resets the counter.
  */
 export async function callRag({ query, evidence }) {
   let healthy = getHealthy();
@@ -132,8 +149,8 @@ export async function callRag({ query, evidence }) {
       const response = await axios.post(
         `${backend.url}/api/chat`,
         {
-          Query: query,               // ← string
-          Evidence: evidence || {}    // ← object (the Postgres + static KB data)
+          Query: query,
+          Evidence: evidence || {}
         },
         {
           timeout: CHAT_TIMEOUT,
@@ -144,20 +161,41 @@ export async function callRag({ query, evidence }) {
         }
       );
 
+      // ── Success path ────────────────────────────────────────────
+      // Any successful reply means the backend is alive. Reset
+      // counters so previous transient failures do not accumulate.
+      backend.failures = 0;
+      backend.healthy = true;
+      backend.ready = true;
+      backend.latencyMs = null; // latency is only tracked on health check
+
       return {
         backendId: backend.id,
         backendName: backend.name,
         response: response.data
       };
     } catch (error) {
-      console.error(`[AI] ${backend.id} failed:`, error.response?.status || error.message);
+      console.error(
+        `[AI] ${backend.id} failed:`,
+        error.response?.status || error.message
+      );
       if (error.response?.data) {
         console.error("   detail:", JSON.stringify(error.response.data, null, 2));
       }
 
-      backend.healthy = false;
-      backend.ready = false;
-      backend.failures += 1;
+      // ── Failure path ────────────────────────────────────────────
+      // Increment counter, but DO NOT mark unhealthy on the first
+      // failure. Only after FAILURE_THRESHOLD consecutive failures
+      // do we take the backend out of rotation.
+      backend.failures = (backend.failures || 0) + 1;
+
+      if (backend.failures >= FAILURE_THRESHOLD) {
+        console.error(
+          `[AI] ${backend.id} reached ${backend.failures} consecutive failures — marking unhealthy.`
+        );
+        backend.healthy = false;
+        backend.ready = false;
+      }
     }
   }
 
