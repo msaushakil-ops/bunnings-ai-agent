@@ -74,7 +74,15 @@
 # The exact runtime configuration depends on the local environment and required backend services.
 
 
-# \## Demonstration Video
+
+## Demonstration Video
+
+Watch the project walkthrough:
+
+[**▶ Watch the Bunnings AI Agent Demonstration**](https://github.com/msaushakil-ops/bunnings-ai-agent/releases/download/portfolio-demo-v1.0.0/AIAgentAtAGlance_01.mp4)
+
+[View the full GitHub Release](https://github.com/msaushakil-ops/bunnings-ai-agent/releases/tag/portfolio-demo-v1.0.0)
+
 
 
 # The project walkthrough video will be linked here after it has been uploaded to a GitHub Release.
