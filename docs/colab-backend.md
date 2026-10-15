@@ -26,5 +26,24 @@ as `COLAB` in `colabPool.js`.
 ## Script
 
 ```python
-# (paste the full v4 script here — the one you just ran in Colab)
+## Notebook
+
+The Colab backend implementation is maintained in
+[`notebooks/bunnings_ai_agent_v4.ipynb`](../notebooks/bunnings_ai_agent_v4.ipynb).
+
+Open the notebook in Google Colab. Configure `NGROK_TOKEN` and
+`GEMINI_API_KEY` in Colab Secrets and enable access to those secrets
+before running the notebook.
+
+Never commit credentials, private customer data or sensitive outputs.
+
+Configure `COLAB_URL` in your local `.env` file with the backend URL.
+Do not commit `.env`.
+
+`BACKEND_ID` must match the `id` configured for `COLAB` in
+`src/services/colabPool.js`.
+
+Verify the v4 API contract and test the Node.js-to-Colab integration
+before using the backend in a demonstration.
+
 ```
